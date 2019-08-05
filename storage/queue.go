@@ -5,7 +5,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
-	"github.com/spencer404/go-digger/digger/internal"
+	"github.com/spencer404/go-digger/internal"
 	"io"
 	"strings"
 	"time"

@@ -2,8 +2,8 @@ package digger
 
 import (
 	"github.com/pkg/errors"
-	"github.com/spencer404/go-digger/digger/storage"
-	"github.com/spencer404/go-digger/digger/transport"
+	"github.com/spencer404/go-digger/storage"
+	"github.com/spencer404/go-digger/transport"
 	"io"
 	"log"
 	"time"
@@ -43,11 +43,11 @@ func (r *ReactorOpt) Debug(enable bool) *ReactorOpt {
 
 // 反应堆
 type Reactor struct {
-	queue         storage.Queue
-	bucket        storage.Bucket
-	transport     transport.Maker
-	interval      time.Duration
-	downloadRetry int
+	Queue         storage.Queue
+	Bucket        storage.Bucket
+	Transport     transport.Maker
+	Interval      time.Duration
+	DownloadRetry int
 	popErrCount   int // 队列连续弹出失败计数器
 	parallels     int // Goroutine数量
 }
@@ -73,20 +73,20 @@ func (r *Reactor) Run(spider *Spider) error {
 		return errors.Errorf("未设置Spider.OnProcess")
 	}
 	// 设置初始化标识
-	if _, err := r.bucket.Get("_IsInit"); err == storage.ErrNotExist {
+	if _, err := r.Bucket.Get("_IsInit"); err == storage.ErrNotExist {
 		log.Printf("正在执行OnInit")
 		// 运行爬虫初始化函数
 		if err := spider.OnInit(); err != nil {
 			return errors.Wrap(err, "初始化爬虫失败")
 		}
-		if err := r.bucket.Set("_IsInit", ""); err != nil {
+		if err := r.Bucket.Set("_IsInit", ""); err != nil {
 			return errors.Wrap(err, "启动爬虫失败，设置'_IsInit'失败")
 		}
 		// 注入Seeders
 		log.Printf("正在注入%d个Seeders", len(spider.Seeders))
 		n := 0
 		for _, url := range spider.Seeders {
-			ok, err := r.queue.Add(url, storage.Priority0)
+			ok, err := r.Queue.Add(url, storage.Priority0)
 			if err != nil {
 				return errors.Wrapf(err, "启动爬虫失败，注入Seeder:%q失败", url)
 			}
@@ -99,8 +99,8 @@ func (r *Reactor) Run(spider *Spider) error {
 		return errors.Wrap(err, "启动爬虫失败，未能获取到'_IsInit'")
 	}
 	// 注入资源
-	spider.Queue = r.queue
-	spider.Bucket = r.bucket
+	spider.Queue = r.Queue
+	spider.Bucket = r.Bucket
 	// 监听队列
 	loopCh := make(chan int, r.parallels)
 	for i := 0; i < r.parallels; i++ {
@@ -108,10 +108,15 @@ func (r *Reactor) Run(spider *Spider) error {
 			log.Printf("进入调度循环: %d", i)
 			for {
 				// 弹出Item
-				item, err := r.queue.Pop()
+				item, err := r.Queue.Pop()
 				if err == io.EOF {
+					// TODO: 全部Goroutine都空闲时才可停止
+					// 所有Goroutine要么同时运行，要么同时停止
+					// 因为队列空时，运行中的Goroutine还会继续往队列添加新的URL
 					log.Printf("队列已空")
-					break
+					//break
+					time.Sleep(time.Second) // TODO: 临时方法
+					continue
 				} else if err != nil {
 					r.popErrCount++
 					log.Printf("队列弹出失败: %s", err)
@@ -123,14 +128,14 @@ func (r *Reactor) Run(spider *Spider) error {
 				r.popErrCount = 0
 				// 交由Spider处理
 				// TODO: 重试逻辑
-				if err := spider.OnProcess(item.URL, r.transport()); err != nil {
-					log.Printf("执行失败: %s", err)
+				if err := spider.OnProcess(item.URL, r); err != nil {
+					log.Printf("执行失败: %s, %s", item.URL, err)
 				}
-				if _, err := r.queue.Finish(item.URL); err != nil {
+				if _, err := r.Queue.Finish(item.URL); err != nil {
 					log.Printf("从队列移除%q失败: %s", item.URL, err)
 				}
 				// 速率控制 TODO: 精细地控制interval
-				time.Sleep(r.interval)
+				time.Sleep(r.Interval)
 			}
 			loopCh <- i
 		}(i)
@@ -156,22 +161,22 @@ func MustNewReactor(queue storage.Queue, bucket storage.Bucket, parallels int, o
 func NewReactor(queue storage.Queue, bucket storage.Bucket, parallels int, opt *ReactorOpt) (*Reactor, error) {
 	// 默认参数
 	reactor := Reactor{
-		queue:         queue,
-		bucket:        bucket,
-		transport:     transport.DirectTransport(),
-		interval:      0,
-		downloadRetry: 3,
+		Queue:         queue,
+		Bucket:        bucket,
+		Transport:     transport.DirectTransport(),
+		Interval:      0,
+		DownloadRetry: 3,
 		parallels:     parallels,
 	}
 	// 可选参数
 	if opt.transport != nil {
-		reactor.transport = opt.transport
+		reactor.Transport = opt.transport
 	}
 	if opt.interval != nil {
-		reactor.interval = *opt.interval
+		reactor.Interval = *opt.interval
 	}
 	if opt.downloadRetry != nil {
-		reactor.downloadRetry = *opt.downloadRetry
+		reactor.DownloadRetry = *opt.downloadRetry
 	}
 	// 调试模式, 清空资源
 	if opt.debug != nil && *opt.debug {
