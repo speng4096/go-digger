@@ -1,4 +1,4 @@
-package spiders
+package baidumap
 
 import (
 	"fmt"
@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 )
+
+const pageSize = 50
 
 type Point struct {
 	Lng float64
@@ -45,22 +47,6 @@ func makeURL(point1, point2 Point, keyword, areaCode string) string {
 	return s
 }
 
-func parsePoint(s string) (Point, error) {
-	items := strings.Split(s, ",")
-	if len(items) != 2 {
-		return Point{}, errors.Errorf("Point格式有误: %s", s)
-	}
-	lng, err := strconv.ParseFloat(items[0], 10)
-	if err != nil {
-		return Point{}, errors.Errorf("Point格式有误: %s", s)
-	}
-	lat, err := strconv.ParseFloat(items[1], 10)
-	if err != nil {
-		return Point{}, errors.Errorf("Point格式有误: %s", s)
-	}
-	return Point{lng, lat}, nil
-}
-
 func parseURL(url string) (point1, point2 Point, keyword, areaCode string, err error) {
 	items := strings.Split(url, "|")
 	if len(items) != 4 {
@@ -82,13 +68,20 @@ func parseURL(url string) (point1, point2 Point, keyword, areaCode string, err e
 	return
 }
 
-func parseJSONp(body string) (*jason.Object, error) {
-	s := tools.Centre(body, "{", "}")
-	obj, err := jason.NewObjectFromReader(strings.NewReader(s))
-	if err != nil {
-		return nil, errors.Wrapf(err, "提取JSON失败")
+func parsePoint(s string) (Point, error) {
+	items := strings.Split(s, ",")
+	if len(items) != 2 {
+		return Point{}, errors.Errorf("Point格式有误: %s", s)
 	}
-	return obj, nil
+	lng, err := strconv.ParseFloat(items[0], 10)
+	if err != nil {
+		return Point{}, errors.Errorf("Point格式有误: %s", s)
+	}
+	lat, err := strconv.ParseFloat(items[1], 10)
+	if err != nil {
+		return Point{}, errors.Errorf("Point格式有误: %s", s)
+	}
+	return Point{lng, lat}, nil
 }
 
 // 将矩形按长边切割为两个小矩形
@@ -164,11 +157,11 @@ func parsePOI(content *jason.Object) (poi BaiduPOI, err error) {
 	return poi, nil
 }
 
-func NewBaiduPOISearchSpider(areaCode string, keyword string, onSave func(poi BaiduPOI)) *digger.Spider {
+func NewBaiduPOISearchSpider(city string, keyword string, onSave func(poi BaiduPOI)) *digger.Spider {
 	return &digger.Spider{
 		// 坐标为大陆矩形范围
 		Seeders: []string{
-			makeURL(Point{72.396497, 0.957873}, Point{138.332409, 54.684761}, keyword, areaCode),
+			makeURL(Point{72.396497, 0.957873}, Point{138.332409, 54.684761}, keyword, city),
 		},
 		OnProcess: func(url string, reactor *digger.Reactor) error {
 			// 获取参数
@@ -195,7 +188,7 @@ func NewBaiduPOISearchSpider(areaCode string, keyword string, onSave func(poi Ba
 				"c":           areaCode,
 				"wd":          keyword,
 				"ar":          fmt.Sprintf("(%f,%f;%f,%f)", x1, y1, x2, y2),
-				"rn":          "50",
+				"rn":          fmt.Sprintf("%d", pageSize),
 				"l":           "18",
 				"ie":          "utf-8",
 				"oue":         "1",
@@ -213,7 +206,7 @@ func NewBaiduPOISearchSpider(areaCode string, keyword string, onSave func(poi Ba
 				return errors.Errorf("接口返回异常状态码: %d", resp.StatusCode())
 			}
 			// 提取JSON数据
-			obj, err := parseJSONp(resp.String())
+			obj, err := tools.ParseJSONp(resp.String())
 			if err != nil {
 				return err
 			}
@@ -223,8 +216,8 @@ func NewBaiduPOISearchSpider(areaCode string, keyword string, onSave func(poi Ba
 				return nil // 无搜索结果
 			}
 			// 若结果数量过多，则需细化搜索范围
-			if len(contents) == 50 {
-				log.Printf("结果数量:%d, 缩小搜索范围", len(contents))
+			if len(contents) >= pageSize {
+				log.Printf("结果数量:%d, 分割搜索区域", len(contents))
 				pointA1, pointA2, pointB1, pointB2 := splitArea(point1, point2)
 				_, err = reactor.Queue.Add(makeURL(pointA1, pointA2, keyword, areaCode), storage.Priority3)
 				if err != nil {
@@ -234,7 +227,6 @@ func NewBaiduPOISearchSpider(areaCode string, keyword string, onSave func(poi Ba
 				if err != nil {
 					return err
 				}
-				return nil
 			}
 			// 结构化数据
 			log.Printf("结果数量:%d, 正在保存", len(contents))

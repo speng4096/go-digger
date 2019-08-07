@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TODO: 彩色日志，区分时间、Reactor、Spider、Error、Warning
 // 反应堆可选参数
 type ReactorOpt struct {
 	transport     transport.Maker
@@ -103,19 +104,27 @@ func (r *Reactor) Run(spider *Spider) error {
 	spider.Bucket = r.Bucket
 	// 监听队列
 	loopCh := make(chan int, r.parallels)
+	loopBreak := make(map[int]bool, r.parallels)
 	for i := 0; i < r.parallels; i++ {
+		loopBreak[i] = false
 		go func(i int) {
-			log.Printf("进入调度循环: %d", i)
+			log.Printf("%d号Grourine已启动", i)
 			for {
 				// 弹出Item
 				item, err := r.Queue.Pop()
 				if err == io.EOF {
-					// TODO: 全部Goroutine都空闲时才可停止
+					log.Printf("%d号Grourine报告队列已空", i)
 					// 所有Goroutine要么同时运行，要么同时停止
 					// 因为队列空时，运行中的Goroutine还会继续往队列添加新的URL
-					log.Printf("队列已空")
-					//break
-					time.Sleep(time.Second) // TODO: 临时方法
+					time.Sleep(time.Second * time.Duration(r.parallels/2))
+					loopBreak[i] = true
+					for _, v := range loopBreak {
+						if !v {
+							goto ContinueLoop
+						}
+					}
+					break
+				ContinueLoop:
 					continue
 				} else if err != nil {
 					r.popErrCount++
@@ -125,9 +134,11 @@ func (r *Reactor) Run(spider *Spider) error {
 					log.Printf("休眠结束: %s", c.String())
 					continue
 				}
+				loopBreak[i] = false
 				r.popErrCount = 0
 				// 交由Spider处理
 				// TODO: 重试逻辑
+				log.Printf("正在执行: %s", item.URL)
 				if err := spider.OnProcess(item.URL, r); err != nil {
 					log.Printf("执行失败: %s, %s", item.URL, err)
 				}

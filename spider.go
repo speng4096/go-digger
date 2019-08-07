@@ -5,9 +5,9 @@ import (
 )
 
 type Spider struct {
-	Seeders   []string
-	Queue     storage.Queue
-	Bucket    storage.Bucket
+	Seeders   []string       // 初始URL
+	Queue     storage.Queue  // 队列
+	Bucket    storage.Bucket //
 	OnInit    func() error
 	OnProcess func(url string, reactor *Reactor) error
 }
