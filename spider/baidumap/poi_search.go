@@ -8,7 +8,7 @@ import (
 	"github.com/spencer404/go-bd09mc"
 	"github.com/spencer404/go-digger"
 	"github.com/spencer404/go-digger/storage"
-	"github.com/spencer404/go-digger/tools"
+	"github.com/spencer404/go-digger/tool"
 	"log"
 	"strconv"
 	"strings"
@@ -163,7 +163,7 @@ func NewBaiduPOISearchSpider(city string, keyword string, onSave func(poi BaiduP
 		Seeders: []string{
 			makeURL(Point{72.396497, 0.957873}, Point{138.332409, 54.684761}, keyword, city),
 		},
-		OnProcess: func(url string, reactor *digger.Reactor) error {
+		OnProcess: func(url string, client *resty.Client, reactor *digger.Reactor) error {
 			// 获取参数
 			point1, point2, keyword, areaCode, err := parseURL(url)
 			if err != nil {
@@ -197,7 +197,7 @@ func NewBaiduPOISearchSpider(city string, keyword string, onSave func(poi BaiduP
 				"callback":    "BMap._rd._cbk64211",
 				"ak":          "E4805d16520de693a3fe707cdc962045", // 百度Demo找的
 			}
-			req := resty.New().R().SetQueryParams(params).SetHeaders(headers)
+			req := client.R().SetQueryParams(params).SetHeaders(headers)
 			resp, err := req.Get("http://api.map.baidu.com/")
 			if err != nil {
 				return err
@@ -206,7 +206,7 @@ func NewBaiduPOISearchSpider(city string, keyword string, onSave func(poi BaiduP
 				return errors.Errorf("接口返回异常状态码: %d", resp.StatusCode())
 			}
 			// 提取JSON数据
-			obj, err := tools.ParseJSONp(resp.String())
+			obj, err := tool.ParseJSONp(resp.String())
 			if err != nil {
 				return err
 			}

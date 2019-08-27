@@ -1,13 +1,9 @@
 package digger
 
-import (
-	"github.com/spencer404/go-digger/storage"
-)
+import "github.com/go-resty/resty/v2"
 
 type Spider struct {
-	Seeders   []string       // 初始URL
-	Queue     storage.Queue  // 队列
-	Bucket    storage.Bucket //
-	OnInit    func() error
-	OnProcess func(url string, reactor *Reactor) error
+	Seeders   []string                                                                           // 初始URL
+	OnInit    func(reactor *Reactor) error                                                       // 首次运行时调用
+	OnProcess func(url string, client *resty.Client, proxy *ProxyHelper, reactor *Reactor) error // 从队列获取到URL时调用
 }

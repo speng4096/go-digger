@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spencer404/go-digger"
 	"github.com/spencer404/go-digger/storage"
-	"github.com/spencer404/go-digger/tools"
+	"github.com/spencer404/go-digger/tool"
 	"log"
 	"strconv"
 	"strings"
@@ -160,7 +160,7 @@ func NewGaodePOISearchSpider(keyword string, onSave func(poi GaodePOI)) *digger.
 		Seeders: []string{
 			makeURL(Point{72.396497, 0.957873}, Point{138.332409, 54.684761}, keyword, "全国"),
 		},
-		OnProcess: func(url string, reactor *digger.Reactor) error {
+		OnProcess: func(url string, client *resty.Client, reactor *digger.Reactor) error {
 			// 获取参数
 			point1, point2, keyword, areaCode, err := parseURL(url)
 			if err != nil {
@@ -193,7 +193,7 @@ func NewGaodePOISearchSpider(keyword string, onSave func(poi GaodePOI)) *digger.
 				"page":       "1",
 				"pageSize":   fmt.Sprintf("%d", pageSize),
 			}
-			req := resty.New().R().SetQueryParams(params).SetHeaders(headers)
+			req := client.R().SetQueryParams(params).SetHeaders(headers)
 			resp, err := req.Get("https://restapi.amap.com/v3/place/polygon")
 			if err != nil {
 				return err
@@ -202,7 +202,7 @@ func NewGaodePOISearchSpider(keyword string, onSave func(poi GaodePOI)) *digger.
 				return errors.Errorf("接口返回异常状态码: %d", resp.StatusCode())
 			}
 			// 提取JSON数据
-			obj, err := tools.ParseJSONp(resp.String())
+			obj, err := tool.ParseJSONp(resp.String())
 			if err != nil {
 				if strings.Contains(resp.String(), "errcode:30000") {
 					return errors.Errorf("IP已被限制")
