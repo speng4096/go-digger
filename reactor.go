@@ -310,30 +310,32 @@ func (r *Reactor) Run(spider *Spider) error {
 					log.Printf("从队列移除%q失败: %s", item.URL, err)
 				}
 				// 处理代理
-				switch ph.flag {
-				case FlagPutBack, FlagUnset:
-					r.putBackLock.Lock()
-					r.putBackList = append(r.putBackList, p)
-					r.putBackLock.Unlock()
-				case FlagFreeze:
-					r.freezeLock.Lock()
-					if _, exist := r.freezeList[p.URL]; exist {
-						r.freezeList[p.URL].ps = append(r.freezeList[p.URL].ps, p)
-						r.freezeList[p.URL].t = time.Now().Add(ph.flagD)
-					} else {
-						r.freezeList[p.URL] = &freezeItem{t: time.Now().Add(ph.flagD), ps: []*Proxy{p}}
+				if p != nil {
+					switch ph.flag {
+					case FlagPutBack, FlagUnset:
+						r.putBackLock.Lock()
+						r.putBackList = append(r.putBackList, p)
+						r.putBackLock.Unlock()
+					case FlagFreeze:
+						r.freezeLock.Lock()
+						if _, exist := r.freezeList[p.URL]; exist {
+							r.freezeList[p.URL].ps = append(r.freezeList[p.URL].ps, p)
+							r.freezeList[p.URL].t = time.Now().Add(ph.flagD)
+						} else {
+							r.freezeList[p.URL] = &freezeItem{t: time.Now().Add(ph.flagD), ps: []*Proxy{p}}
+						}
+						r.freezeLock.Unlock()
+					case FlagForbidden:
+						r.blackList.SetWithTTL(p.URL, struct{}{}, ph.flagD)
+						key := fmt.Sprintf("%s:%d", p.URL, p.Index)
+						r.poolFilter.Remove(key)
+					case FlagDelete:
+						key := fmt.Sprintf("%s:%d", p.URL, p.Index)
+						r.poolFilter.Remove(key)
+					default:
+						log.Printf("未支持的Flag: %d", ph.flag)
+						continue
 					}
-					r.freezeLock.Unlock()
-				case FlagForbidden:
-					r.blackList.SetWithTTL(p.URL, struct{}{}, ph.flagD)
-					key := fmt.Sprintf("%s:%d", p.URL, p.Index)
-					r.poolFilter.Remove(key)
-				case FlagDelete:
-					key := fmt.Sprintf("%s:%d", p.URL, p.Index)
-					r.poolFilter.Remove(key)
-				default:
-					log.Printf("未支持的Flag: %d", ph.flag)
-					continue
 				}
 				// 速率控制 TODO: 精细地控制interval
 				time.Sleep(r.Interval)
